@@ -5,6 +5,7 @@
 
 from osdagbridge.core.utils.common import (
     KEY_CB_LOAD,
+    KEY_FOOTPATH,
     KEY_LL_CUSTOM_VEHICLES,
     KEY_LL_FOOTPATH_PRESSURE_MODE,
     KEY_LL_FOOTPATH_PRESSURE_VALUE,
@@ -40,6 +41,9 @@ from osdagbridge.core.utils.common import (
     KEY_TL_LOWEST_MIN_TEMP,
     KEY_TL_TEMP_FALL,
     KEY_TL_TEMP_RISE,
+    KEY_TS_FOOTPATH_THICKNESS,
+    KEY_TS_FOOTPATH_WIDTH,
+    KEY_TS_NO_OF_FOOTPATHS,
     KEY_WC_LD_LANE_TABLE_COUNT,
     KEY_WC_MATERIAL,
     KEY_WC_THICKNESS,
@@ -56,91 +60,246 @@ from osdagbridge.core.utils.common import (
 from osdagbridge.core.reports.report_utils import _tex, _render_value
 
 def ch3_loads(input_dict):
-    # Live load vehicle names mapping
-    vehicles = []
-    if input_dict.get(KEY_LL_IRC_CLASS_A):
-        vehicles.append("Class A")
-    if input_dict.get(KEY_LL_IRC_70R_WHEELED):
-        vehicles.append("Class 70R (Wheeled)")
-    if input_dict.get(KEY_LL_IRC_70R_TRACKED):
-        vehicles.append("Class 70R (Tracked)")
-    if input_dict.get(KEY_LL_IRC_AA_WHEELED):
-        vehicles.append("Class AA (Wheeled)")
-    if input_dict.get(KEY_LL_IRC_AA_TRACKED):
-        vehicles.append("Class AA (Tracked)")
-    if input_dict.get(KEY_LL_IRC_CLASS_SV):
-        vehicles.append("Class SV")
-    if input_dict.get(KEY_LL_IRC_70R_BOGIE):
-        vehicles.append("Class 70R (Bogie)")
-    if input_dict.get(KEY_LL_IRC_CLASS_FATIGUE):
-        vehicles.append("Class Fatigue")
-    
-    custom = input_dict.get(KEY_LL_CUSTOM_VEHICLES)
+    def _is_checked(val):
+        if val is None:
+            return False
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, (int, float)):
+            return val > 0
+        s = str(val).strip().lower()
+        if s in ("false", "0", "no", "none", "off", ""):
+            return False
+        if s in ("true", "1", "yes", "checked", "selected", "on"):
+            return True
+        return False
+
+    # Dynamic Live Load vehicle selection (only selected/checked vehicles)
+    irc_vehicle_defs = [
+        (KEY_LL_IRC_CLASS_A, "Class A", ["irc_class_a", "class_a"], "class_a"),
+        (KEY_LL_IRC_70R_WHEELED, "Class 70R (Wheeled)", ["irc_70r_wheeled", "70r_wheeled"], "70r_wheeled"),
+        (KEY_LL_IRC_70R_TRACKED, "Class 70R (Tracked)", ["irc_70r_tracked", "70r_tracked"], "70r_tracked"),
+        (KEY_LL_IRC_AA_WHEELED, "Class AA (Wheeled)", ["irc_aa_wheeled", "aa_wheeled"], "aa_wheeled"),
+        (KEY_LL_IRC_AA_TRACKED, "Class AA (Tracked)", ["irc_aa_tracked", "aa_tracked"], "aa_tracked"),
+        (KEY_LL_IRC_70R_BOGIE, "Class 70R (Bogie)", ["irc_70r_bogie", "70r_bogie"], "70r_bogie"),
+        (KEY_LL_IRC_CLASS_SV, "Class SV", ["irc_class_sv", "class_sv"], "class_sv"),
+        (KEY_LL_IRC_CLASS_FATIGUE, "Class Fatigue", ["irc_class_fatigue", "class_fatigue"], "class_fatigue"),
+    ]
+
+    selected_vehicles = []
+    for key, display_name, aliases, code in irc_vehicle_defs:
+        val = input_dict.get(key)
+        if val is None:
+            for alias in aliases:
+                if alias in input_dict:
+                    val = input_dict[alias]
+                    break
+        if _is_checked(val):
+            selected_vehicles.append((display_name, code, None))
+
+    custom = input_dict.get(KEY_LL_CUSTOM_VEHICLES) or input_dict.get("custom_vehicles")
     if custom and isinstance(custom, list):
         for c in custom:
-            if isinstance(c, dict) and c.get('name'):
-                vehicles.append(c['name'])
-            elif isinstance(c, str):
-                vehicles.append(c)
-                
-    vehicles_str = ", ".join(vehicles) if vehicles else "None"
+            if isinstance(c, dict):
+                chk = c.get("checked", c.get("enabled", True))
+                if _is_checked(chk):
+                    c_name = c.get("name") or c.get("vehicle_name") or "Custom Vehicle"
+                    selected_vehicles.append((str(c_name), "custom", c))
+            elif isinstance(c, str) and c.strip():
+                selected_vehicles.append((c.strip(), "custom", None))
+
+    if not selected_vehicles:
+        raw_list = input_dict.get("selected_vehicles") or input_dict.get("vehicles")
+        if isinstance(raw_list, list):
+            for item in raw_list:
+                if isinstance(item, str) and item.strip():
+                    item_s = item.strip()
+                    matched_code = "custom"
+                    for _, d_name, _, code in irc_vehicle_defs:
+                        if item_s.lower() == d_name.lower():
+                            matched_code = code
+                            break
+                    selected_vehicles.append((item_s, matched_code, None))
 
     from osdagbridge.core.utils.codes.irc6_2017 import IRC6_2017
-    span = input_dict.get(KEY_SPAN)
-    impact_factor_str = ""
-    if span not in (None, ""):
-        try:
-            span_m = float(span)
-            factors = []
-            if input_dict.get(KEY_LL_IRC_CLASS_A):
-                im_a = IRC6_2017.cl_208_2_impact_factor(span_m)
-                factors.append(f"Class A: {1.0 + im_a:.3f}")
-            is_wheeled_heavy = (
-                input_dict.get(KEY_LL_IRC_70R_WHEELED) or 
-                input_dict.get(KEY_LL_IRC_AA_WHEELED) or 
-                input_dict.get(KEY_LL_IRC_70R_BOGIE)
-            )
-            is_tracked_heavy = (
-                input_dict.get(KEY_LL_IRC_70R_TRACKED) or 
-                input_dict.get(KEY_LL_IRC_AA_TRACKED)
-            )
-            if is_wheeled_heavy or is_tracked_heavy:
-                im_aa = IRC6_2017.cl_208_3_impact_factor(span_m)
-                factors.append(f"Class AA/70R: {1.0 + im_aa:.3f}")
-            
-            if factors:
-                impact_factor_str = ", ".join(factors)
-            else:
-                impact_factor_str = "N/A"
-        except Exception:
-            impact_factor_str = "N/A"
-    else:
-        impact_factor_str = "N/A"
 
-    lanes = input_dict.get(KEY_WC_LD_LANE_TABLE_COUNT)
-    braking_force_str = ""
-    if lanes not in (None, ""):
+    span_raw = input_dict.get(KEY_SPAN) or input_dict.get("span")
+    span_m = None
+    if span_raw not in (None, ""):
         try:
-            lanes_int = int(lanes)
+            s_val = float(span_raw)
+            if s_val > 0:
+                span_m = s_val
+        except (ValueError, TypeError):
+            span_m = None
+
+    def _get_vehicle_impact_str(code, span, custom_obj):
+        if code == "class_a":
+            if span is not None:
+                L = min(max(span, 3.0), 45.0)
+                im = 9.0 / (13.5 + L)
+                return f"{1.0 + im:.3f} (IM = {im * 100:.1f}%, IRC 6 Cl. 208.2)"
+            return "N/A (Span not specified)"
+
+        elif code in ("70r_wheeled", "aa_wheeled", "70r_bogie"):
+            if span is not None:
+                if span < 23.0:
+                    im = 0.25
+                else:
+                    L = min(span, 45.0)
+                    im = 9.0 / (13.5 + L)
+                return f"{1.0 + im:.3f} (IM = {im * 100:.1f}%, IRC 6 Cl. 208.3)"
+            return "N/A (Span not specified)"
+
+        elif code in ("70r_tracked", "aa_tracked"):
+            if span is not None:
+                im = 0.25 if span < 5.0 else 0.10
+                return f"{1.0 + im:.3f} (IM = {im * 100:.1f}%, IRC 6 Cl. 208.3)"
+            return "N/A (Span not specified)"
+
+        elif code == "class_sv":
+            return "1.000 (No dynamic impact allowance, IRC 6 Cl. 204.6)"
+
+        elif code == "class_fatigue":
+            return "1.000 (Static / Fatigue verification, IRC 6 Cl. 204.5)"
+
+        elif code == "custom":
+            if custom_obj and isinstance(custom_obj, dict):
+                im_val = (
+                    custom_obj.get("impact_factor") or
+                    custom_obj.get("impact") or
+                    custom_obj.get("impact_multiplier")
+                )
+                if im_val not in (None, ""):
+                    try:
+                        im_f = float(im_val)
+                        if im_f >= 1.0:
+                            mult = im_f
+                            im_pct = (im_f - 1.0) * 100.0
+                        else:
+                            mult = 1.0 + im_f
+                            im_pct = im_f * 100.0
+                        return f"{mult:.3f} (User-defined, IM = {im_pct:.1f}%)"
+                    except (ValueError, TypeError):
+                        return f"{str(im_val)} (User-defined)"
+            return "1.000 (Static / User-defined)"
+
+        return "N/A"
+
+    lanes_raw = (
+        input_dict.get(KEY_WC_LD_LANE_TABLE_COUNT) or
+        input_dict.get("number_of_lanes") or
+        input_dict.get("lanes") or
+        input_dict.get("no_of_lanes")
+    )
+    if lanes_raw not in (None, ""):
+        try:
+            lanes_int = int(lanes_raw)
+            lanes_str = f"{lanes_int} Lane" if lanes_int == 1 else f"{lanes_int} Lanes"
             braking_force_t = IRC6_2017.cl_211_2_braking_force(lanes_int)
             braking_force_kN = braking_force_t * 9.81
             braking_force_str = f"{braking_force_kN:.2f} kN ({braking_force_t:.2f} tonnes)"
         except Exception:
+            lanes_str = str(lanes_raw)
             braking_force_str = "N/A"
     else:
+        lanes_str = "N/A"
         braking_force_str = "N/A"
 
-    fp_mode  = input_dict.get(KEY_LL_FOOTPATH_PRESSURE_MODE, "")
-    fp_value = input_dict.get(KEY_LL_FOOTPATH_PRESSURE_VALUE, "")
-    if str(fp_mode).strip().lower() in ("as per irc 6", "as per irc6", "automatic"):
-        try:
-            fp_str = f"{IRC6_2017.cl_206_1_footway_load():.3f} kN/m² (IRC 6 Cl. 206.1)"
-        except Exception:
-            fp_str = "N/A"
-    elif fp_value not in (None, ""):
-        fp_str = f"{fp_value} kN/m²"
+    v_rows = []
+    v_rows.append(r"\textnormal{Design Traffic Lanes} & " + _tex(lanes_str) + r" \\[6pt]" + "\n" + r"\hline")
+    v_rows.append(r"\textnormal{Longitudinal Braking Force} & " + _tex(braking_force_str) + r" \\[6pt]" + "\n" + r"\hline")
+
+    if selected_vehicles:
+        vehicles_summary_str = ", ".join(v[0] for v in selected_vehicles)
+        v_rows.append(r"\textnormal{Vehicles Considered} & " + _tex(vehicles_summary_str) + r" \\[6pt]" + "\n" + r"\hline")
+        for v_name, v_code, custom_obj in selected_vehicles:
+            im_text = _get_vehicle_impact_str(v_code, span_m, custom_obj)
+            v_rows.append(
+                r"\textnormal{Impact Factor --- " + _tex(v_name) + r"} & " + _tex(im_text) + r" \\[6pt]" + "\n" + r"\hline"
+            )
     else:
-        fp_str = "N/A"
+        v_rows.append(r"\textnormal{Vehicles Considered} & None \\[6pt]" + "\n" + r"\hline")
+        v_rows.append(r"\textnormal{Impact Factor (IRC 6)} & N/A \\[6pt]" + "\n" + r"\hline")
+
+    v_rows_str = "\n".join(v_rows)
+
+    # Footway Live Load (IRC 6 Cl. 206.1)
+    fp_raw = input_dict.get(KEY_FOOTPATH) or input_dict.get("footpath")
+    if fp_raw is None and KEY_TS_NO_OF_FOOTPATHS in input_dict:
+        n_fp = input_dict.get(KEY_TS_NO_OF_FOOTPATHS)
+        try:
+            n_fp_int = int(n_fp)
+            if n_fp_int == 1:
+                fp_raw = "Single Side"
+            elif n_fp_int == 2:
+                fp_raw = "Both Sides"
+            else:
+                fp_raw = "None"
+        except (ValueError, TypeError):
+            fp_raw = "None"
+
+    fp_raw_str = str(fp_raw).strip() if fp_raw is not None else "None"
+    has_footpath = fp_raw_str.lower() not in ("none", "false", "no", "0", "")
+
+    if has_footpath:
+        footpath_status = fp_raw_str
+    else:
+        footpath_status = "None / Not Applicable"
+
+    fp_width_val = input_dict.get(KEY_TS_FOOTPATH_WIDTH) or input_dict.get("footpath_width")
+    fp_width_m = None
+    if has_footpath and fp_width_val not in (None, ""):
+        try:
+            w_f = float(fp_width_val)
+            fp_width_m = w_f / 1000.0 if w_f > 10.0 else w_f
+            fp_width_str = f"{fp_width_m:.2f} m"
+        except Exception:
+            fp_width_str = str(fp_width_val)
+    elif not has_footpath:
+        fp_width_str = "N/A (No Footpath)"
+    else:
+        fp_width_str = "N/A"
+
+    fp_mode = input_dict.get(KEY_LL_FOOTPATH_PRESSURE_MODE) or input_dict.get("footpath_pressure_mode")
+    fp_val = (
+        input_dict.get(KEY_LL_FOOTPATH_PRESSURE_VALUE) or
+        input_dict.get("footpath_pressure_value") or
+        input_dict.get("footpath_pressure")
+    )
+
+    if not has_footpath:
+        fp_mode_str = "N/A"
+        fp_pressure_str = "N/A (No Footpath)"
+        fp_linear_str = "N/A (No Footpath)"
+    else:
+        mode_clean = str(fp_mode).strip() if fp_mode not in (None, "") else "Automatic"
+        mode_lower = mode_clean.lower()
+        is_auto = any(k in mode_lower for k in ("auto", "irc 6", "irc6")) or (fp_val in (None, ""))
+
+        if is_auto:
+            fp_mode_str = "Automatic (as per IRC 6 Cl. 206.1)"
+            try:
+                p_kn = IRC6_2017.cl_206_1_footway_load()
+            except Exception:
+                p_kn = 4.905
+            fp_pressure_str = f"{p_kn:.3f} kN/m" + r"\textsuperscript{2} (IRC 6 Cl. 206.1)"
+            design_pressure_val = p_kn
+        else:
+            fp_mode_str = mode_clean
+            try:
+                p_kn = float(fp_val)
+                fp_pressure_str = f"{p_kn:.3f} kN/m" + r"\textsuperscript{2}"
+                design_pressure_val = p_kn
+            except Exception:
+                fp_pressure_str = _tex(str(fp_val)) + r" kN/m\textsuperscript{2}"
+                design_pressure_val = None
+
+        if design_pressure_val is not None and fp_width_m is not None:
+            linear_load_val = design_pressure_val * fp_width_m
+            fp_linear_str = f"{linear_load_val:.2f} kN/m (per walkway)"
+        else:
+            fp_linear_str = "N/A"
 
     # Vz / Pz — prefer stored computed values; fall back to IRC6 Table 12
     vz_val = input_dict.get(KEY_WL_HOURLY_MEAN_WIND)
@@ -301,17 +460,28 @@ This section summarizes all loads applied to the bridge and the load combination
 
 \vspace{1em}
 \begin{longtable}{|L{5.5cm}|p{10.0cm}|}
-\caption{\textbf{Live Loads (LL)}}
+\caption{\textbf{Vehicle Live Loads (IRC 6)}}
 \hline
 \textbf{parameter} & \textbf{value} \\
 \hline
-\textnormal{Vehicles Considered} & """ + _tex(vehicles_str) + r""" \\[6pt]
+""" + v_rows_str + r"""
+\end{longtable}
+
+\vspace{1em}
+\begin{longtable}{|L{5.5cm}|p{10.0cm}|}
+\caption{\textbf{Footway Live Load (IRC 6 Cl. 206.1)}}
 \hline
-\textnormal{Impact Factor (IRC 6)} & """ + _tex(impact_factor_str) + r""" \\[6pt]
+\textbf{parameter} & \textbf{value} \\
 \hline
-\textnormal{Braking Load (IRC 6)} & """ + _tex(braking_force_str) + r""" \\[6pt]
+\textnormal{Footpath Configuration} & """ + _tex(footpath_status) + r""" \\[6pt]
 \hline
-\textnormal{Footpath Live Load (if applicable)} & """ + (_render_value(input_dict, KEY_LL_FOOTPATH_PRESSURE_VALUE, ' kN/m\\textsuperscript{2}')) + r""" \\[6pt]
+\textnormal{Footpath Width} & """ + _tex(fp_width_str) + r""" \\[6pt]
+\hline
+\textnormal{Pressure Mode} & """ + _tex(fp_mode_str) + r""" \\[6pt]
+\hline
+\textnormal{Design Footway Pressure} & """ + fp_pressure_str + r""" \\[6pt]
+\hline
+\textnormal{Resulting Linear Load} & """ + _tex(fp_linear_str) + r""" \\[6pt]
 \hline
 \end{longtable}
 

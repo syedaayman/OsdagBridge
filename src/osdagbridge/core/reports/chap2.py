@@ -333,9 +333,6 @@ def _girder_tables(input_dict, n_girders):
 \hline
 \textbf{Girder} & \textbf{Torsional / Warping Restraint} & \textbf{Web Philosophy} & \textbf{Intermediate Stiffeners} & \textbf{Longitudinal Stiffeners} & \textbf{Bearing Stiffener} \\[6pt]
 \hline
-\endfirsthead
-\endhead
-
 """
             + rst_rows
             + r"""\end{longtable}

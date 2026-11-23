@@ -141,11 +141,11 @@ from osdagbridge.core.utils.common import (
     KEY_UTIL_SHEAR
 )
 
-from osdagbridge.core.reports.report_utils import _tex, _render_value, get_girder_entries
+from osdagbridge.core.reports.report_utils import _tex, _render_value, get_girder_entries, _fig_embed
 
 if TYPE_CHECKING:
     pass
-def ch5_design_checks(checks_data, bridge) -> str:
+def ch5_design_checks(checks_data, bridge, fig_paths=None) -> str:
     """Chapter 5 — Design Checks.
 
     Parameters
@@ -1100,6 +1100,7 @@ This section presents all structural design checks performed by OsdagBridge. For
 \hline
 """ + t53_content + r"""
 \end{longtable}
+""" + _fig_embed(fig_paths.get("util_flexure") if fig_paths else None, "Flexure utilization ratio") + r"""
 \noindent\textit{Note: IRC 22 Cl. 603.3.1, IS 800 Cl. 8.2.1}
 
 \vspace{1em}
@@ -1110,6 +1111,7 @@ This section presents all structural design checks performed by OsdagBridge. For
 \hline
 """ + t54_content + r"""
 \end{longtable}
+""" + _fig_embed(fig_paths.get("util_shear") if fig_paths else None, "Shear utilization ratio") + r"""
 \noindent\textit{Note: IS 800 Cl. 8.4, IRC 22 Cl. 603.3.3.2}
 
 \vspace{1em}
@@ -1120,6 +1122,7 @@ This section presents all structural design checks performed by OsdagBridge. For
 \hline
 """ + t55_content + r"""
 \end{longtable}
+""" + _fig_embed(fig_paths.get("util_interaction") if fig_paths else None, "Interaction utilization ratio") + r"""
 \noindent\textit{Note: IRC 22 Cl. 603.3.3.3}
 
 \vspace{1em}
@@ -1130,6 +1133,7 @@ This section presents all structural design checks performed by OsdagBridge. For
 \hline
 """ + t56_content + r"""
 \end{longtable}
+""" + _fig_embed(fig_paths.get("util_ltb") if fig_paths else None, "LTB utilization ratio") + r"""
 \noindent\textit{Note: IRC 22 Cl. 603.3.3.1, IS 800 Cl. 8.2.2}
 
 \vspace{1em}

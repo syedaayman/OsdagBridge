@@ -1,4 +1,6 @@
-def ch7_quantities(input_dict):
+from osdagbridge.core.reports.report_utils import _fig_embed
+
+def ch7_quantities(input_dict, fig_paths=None):
     return r"""
 \chapter{Material Take-off \& Quantity Summary}
 \label{ch:material-takeoff}
@@ -28,6 +30,8 @@ def ch7_quantities(input_dict):
 6 & Crash Barrier & """ + str(input_dict.get("crash_barrier_vol_formula", "N.A.")) + r""" & """ + str(input_dict.get("crash_barrier_qty", "N.A.")) + r""" & """ + str(input_dict.get("crash_barrier_vol_total", "N.A.")) + r""" & """ + str(input_dict.get("crash_barrier_wt_single", "N.A.")) + r""" & """ + str(input_dict.get("crash_barrier_wt_total", "N.A.")) + r""" \\
 \hline
 \end{longtable}
+\endgroup
+""" + _fig_embed(fig_paths.get("qty_steel_girders_wt_total") if fig_paths else None, "Steel girders total weight") + r"""
+""" + _fig_embed(fig_paths.get("qty_concrete_deck_vol_total") if fig_paths else None, "Concrete deck total volume") + r"""
+""" + _fig_embed(fig_paths.get("qty_rebar_deck_wt_total") if fig_paths else None, "Deck reinforcement total weight") + r"""
 """
-
-

@@ -2357,7 +2357,7 @@ class DCREngine:
                     if key not in is_det:
                         raise KeyError(f"'{key}' missing from intermediate_stiffener details.")
                 # Cl.509.7.2.4 — outstanding leg: H ≤ H_limit
-                self._add_check(20, "Int.Stiff: Leg ≤ H_limit", "Cl.509.7.2.4",
+                self._add_check(20, "Int.Stiff: Leg <= H_limit", "Cl.509.7.2.4",
                                  is_det["H_mm"], is_det["H_limit_mm"], "mm",
                                  note=(f"{is_det['H_limit_type']}; "
                                        f"H_max={is_det['H_max_mm']:.0f} mm; "
